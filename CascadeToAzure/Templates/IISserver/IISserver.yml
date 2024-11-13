@@ -1,0 +1,58 @@
+parameters:
+  - name: subscription
+  - name: environment
+
+
+jobs:
+  - job: Deploy_IIS_Server
+    steps:
+      - task: terraformInstaller@0
+        inputs:
+          terraformVersion: "latest"
+
+      - task: TerraformTaskV4@4
+        displayName: "terraform init for ${{ parameters.environment}} IIS server"
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: "$(build.sourcesDirectory)/Templates/IISserver"
+          commandOptions: >
+            -reconfigure
+            -var-file="${{ parameters.environment }}.tfvars"
+            -var "password=$(iisvmpassword)"
+            -var "iis_count=$(iis_count)"
+          backendAzureRmUseEnvironmentVariablesForAuthentication: true
+          backendServiceArm: '${{ parameters.subscription }}'
+          backendAzureRmResourceGroupName: 'TFState_Storage'
+          backendAzureRmStorageAccountName: 'castfstate'
+          backendAzureRmContainerName: 'terraform-state'
+          backendAzureRmKey: '$(iiskey)'
+
+      - task: TerraformTaskV4@4
+        displayName: "terraform plan for ${{ parameters.environment }} IIS server"
+        inputs:
+          provider: 'azurerm'
+          command: 'plan'
+          workingDirectory: "$(build.sourcesDirectory)/Templates/IISserver"
+          commandOptions: >
+            -var-file="${{ parameters.environment }}.tfvars"
+            -var "password=$(iisvmpassword)"
+            -var "iis_count=$(iis_count)"
+          environmentServiceNameAzureRM: '${{ parameters.subscription }}'
+
+
+      - task: TerraformTaskV4@4
+        displayName: "terraform apply for ${{ parameters.environment }} IIS server"
+        inputs:
+          provider: 'azurerm'
+          command: 'apply'
+          workingDirectory: "$(build.sourcesDirectory)/Templates/IISserver"
+          commandOptions: >
+            -auto-approve
+            -var-file="${{ parameters.environment }}.tfvars"
+            -var "password=$(iisvmpassword)"
+            -var "iis_count=$(iis_count)"
+          environmentServiceNameAzureRM : '${{ parameters.subscription }}'
+
+      
+

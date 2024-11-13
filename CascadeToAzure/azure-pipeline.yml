@@ -1,0 +1,115 @@
+# azure-pipeline.yml
+
+trigger: none
+
+pool:
+  vmImage: "windows-latest"
+
+parameters:
+  - name: Environment
+    type: string
+    default: "select the environment"
+    values:
+      - "dev"
+      - "staging"
+      - "prod"
+
+  - name: deploycoreinfra
+    type: boolean
+    default: false
+
+  - name: deployIISServer
+    type: boolean
+    default: false
+
+  - name: deploySQLServer
+    type: boolean
+    default: false
+
+  - name: additional_iis_count
+    type: int
+    default: 1
+
+  - name: additional_sql_count
+    type: int
+    default: 1
+
+variables:
+  - group: "cascade to azure global"
+
+stages:
+
+  # Core Infrastructure Deployment Stage
+  - stage: "DeployCoreInfra"
+    displayName: "Deploy Core Infrastructure for ${{ parameters.Environment }}"
+    condition: eq('${{ parameters.deploycoreinfra }}', true)
+    variables:
+      - group: "cascade to azure global"
+      - group: "cascade to azure ${{ parameters.Environment }}"
+    jobs:
+      - template: Templates/core/core.yml
+        parameters:
+          subscription: $(subscription)
+          environment: ${{ parameters.Environment }}
+
+  # IIS Server Deployment Stage
+  - stage: "DeployIISServer"
+    displayName: "Deploy the IIS Server"
+    condition: eq('${{ parameters.deployIISServer }}', true)
+    variables:
+      - group: "cascade to azure global"
+      - group: "cascade to azure ${{ parameters.Environment }}"
+    jobs:
+      - job: SetIISCount
+        displayName: "Calculate Incremental IIS Count"
+        steps:
+          - task: Bash@3
+            name: SetIISCount
+            displayName: "Retrieve Existing IIS VM Count"
+            inputs:
+              targetType: 'inline'
+              script: |
+                # Retrieve current IIS VM count from the Terraform state file
+                current_iis_count=$(az storage blob download --container-name tfbackend --name "core.${{ parameters.Environment }}.terraform.tfstate" --file /tmp/core.tfstate --account-name castfstate --query '[].outputs.iis_vm_ids.value | length' --output tsv)
+                
+                # Calculate new IIS VM count based on the additional count specified in the pipeline parameters
+                new_iis_count=$(($current_iis_count + ${{ parameters.additional_iis_count }}))
+                
+                echo "##vso[task.setvariable variable=iis_count]$new_iis_count"
+
+      - template: Templates/IISserver/IISserver.yml
+        parameters:
+          subscription: $(subscription)
+          environment: ${{ parameters.Environment }}
+          iis_count: $(iis_count)
+
+  # SQL Server Deployment Stage
+  - stage: "DeploySQLServer"
+    displayName: "Deploy the SQL Server"
+    condition: eq('${{ parameters.deploySQLServer }}', true)
+    variables:
+      - group: "cascade to azure global"
+      - group: "cascade to azure ${{ parameters.Environment }}"
+    jobs:
+      - job: SetSQLCount
+        displayName: "Calculate Incremental SQL Count"
+        steps:
+          - task: Bash@3
+            name: SetSQLCount
+            displayName: "Retrieve Existing SQL VM Count"
+            inputs:
+              targetType: 'inline'
+              script: |
+                # Retrieve current SQL VM count from the Terraform state file
+                current_sql_count=$(az storage blob download --container-name tfbackend --name "core.${{ parameters.Environment }}.terraform.tfstate" --file /tmp/core.tfstate --account-name castfstate --query '[].outputs.sql_vm_ids.value | length' --output tsv)
+                
+                # Calculate new SQL VM count based on the additional count specified in the pipeline parameters
+                new_sql_count=$(($current_sql_count + ${{ parameters.additional_sql_count }}))
+                
+                echo "##vso[task.setvariable variable=sql_count]$new_sql_count"
+
+      - template: Templates/SQLServer/SQLserver.yml
+        parameters:
+          subscription: $(subscription)
+          environment: ${{ parameters.Environment }}
+          sql_count: $(sql_count)

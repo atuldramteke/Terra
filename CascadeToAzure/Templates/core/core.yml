@@ -1,0 +1,52 @@
+parameters:
+  - name: subscription
+  - name: environment
+
+
+jobs:
+- job: DeployInfra
+  steps:
+    - task: terraformInstaller@0
+      inputs:
+        terraformVersion: "latest"
+
+    - task: TerraformTaskV4@4
+      displayName: "terraform init for ${{ parameters.environment}} core resource"
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: "$(build.sourcesDirectory)/Templates/core"
+        commandOptions: >
+          -reconfigure
+          -var-file="${{ parameters.environment }}.tfvars"
+        backendAzureRmUseEnvironmentVariablesForAuthentication: true
+        backendServiceArm: '${{ parameters.subscription }}'
+        backendAzureRmResourceGroupName: 'TFState_Storage'
+        backendAzureRmStorageAccountName: 'castfstate'
+        backendAzureRmContainerName: 'terraform-state'
+        backendAzureRmKey: '$(corekey)'
+
+    - task: TerraformTaskV4@4
+      displayName: "terraform plan for ${{ parameters.environment }} core resource"
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: "$(build.sourcesDirectory)/Templates/core"
+        commandOptions: >
+          -var-file="${{ parameters.environment }}.tfvars"
+        environmentServiceNameAzureRM: '${{ parameters.subscription }}'
+
+
+    - task: TerraformTaskV4@4
+      displayName: "terraform apply for ${{ parameters.environment }} core resource"
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: "$(build.sourcesDirectory)/Templates/core"
+        commandOptions: >
+          -auto-approve
+          -var-file="${{ parameters.environment }}.tfvars"
+        environmentServiceNameAzureRM : '${{ parameters.subscription }}'
+
+
+
